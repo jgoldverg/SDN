@@ -57,7 +57,7 @@ struct in_addr ipToStruct(uint32_t ip){
 
 struct sockaddr_in buildSockAddr(int ctrlSocket){
     struct sockaddr_in sockAddr;
-    memset(&sockAddr, '\0',sizeof(sockAddr));
+    std::memset(&sockAddr, 0,sizeof(sockAddr));
     sockAddr.sin_family = AF_INET;
     sockAddr.sin_addr.s_addr=htonl(INADDR_ANY);
     sockAddr.sin_port = htons(ctrlSocket);
