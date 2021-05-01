@@ -39,7 +39,8 @@
 
 uint16_t ctrlPort=0, routerPort=0, dataPort=0;
 int ctrlSock=0;
-fd_set headList, viewList; 
+
+
 int main(int argc, char **argv)
 {
 	/*Start Here*/
@@ -50,11 +51,12 @@ int main(int argc, char **argv)
 
 void init(){
 	ctrlSock = buildCtrlSock();
-	
+    FD_ZERO(&headList);
+    FD_ZERO(&viewList);
+    FD_SET(ctrlSock, &headList);
 }
 
 int buildCtrlSock(){
-	struct sockaddr_in sockAddr;
 	int so = socket(AF_INET, SOCK_STREAM,0);
 	if(so < 0){
 		std::string e = "issue creating the socket";
@@ -65,10 +67,7 @@ int buildCtrlSock(){
 		std::string e ="error making control socket reuseable";
 		outError(e);
 	}
-	bzero(&sockAddr, sizeof(sockAddr));
-	sockAddr.sin_family = AF_INET;
-	sockAddr.sin_addr.s_addr=htonl(INADDR_ANY);
-	sockAddr.sin_port = htons(ctrlSock);
+	struct sockaddr_in sockAddr = buildSockAddr(ctrlSock);
 	if(bind(so, (struct sockaddr*)&sockAddr, sizeof(sockAddr))<0){
 		std::string e = "error binding to the control socket";
 		outError(e);
@@ -77,7 +76,7 @@ int buildCtrlSock(){
 		std::string e = "failed in listening to the ctrlSocket";
 		outError(e);
 	}
-	LIST_INIT(&ctrlList);
+	LIST_INIT(&ctrlConnList);
 	return so;
 }
 
@@ -92,8 +91,8 @@ void authorCmd(int sockIdx){
 	memcpy(ctrlResp+CTRLRESPHSIZE, authorMessage, messageSize);
 	sendAll(sockIdx, ctrlResp, respLen);
 	delete(ctrlRespH);
-	delete(authorMessage);
-	delete(ctrlResp);
+	delete[](authorMessage);
+	delete[](ctrlResp);
 }
 
 char* buildCtrlResponseH(int sockIdx, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen){

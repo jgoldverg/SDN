@@ -56,4 +56,17 @@ struct __attribute__((packed)) DataPacketH{
 	uint8_t ttl;
 };
 
+struct DataConn{
+    int sockfd;
+    LIST_ENTRY(DataConn) next;
+}*dataList, *dataConnTemp;
+LIST_HEAD(DataConnHead, DataConn) dataConnList;
+
+struct ControlConn{
+    int sockfd;
+    LIST_ENTRY(ControlConn) next;
+}*ctrlList, *ctrlListTemp;
+LIST_HEAD(CtrlConnHead, ControlConn) ctrlConnList;
+
+
 #endif

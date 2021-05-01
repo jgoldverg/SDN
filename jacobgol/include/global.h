@@ -10,10 +10,11 @@
 #define AUTHORCTRLCODE 0
 #define AUTHORCMD "I, jacobgol, have read and understood the course academic integrity policy."
 
+fd_set headList, viewList;
+
 void init();
 
 void authorCmd(int sockIdx);
-
 
 int buildDataSock();//this is tcp
 
@@ -52,6 +53,15 @@ struct in_addr ipToStruct(uint32_t ip){
 	struct in_addr temp;
 	temp.s_addr = ip;
 	return temp;
+}
+
+struct sockaddr_in buildSockAddr(int ctrlSocket){
+    struct sockaddr_in sockAddr;
+    bzero(&sockAddr, sizeof(sockAddr));
+    sockAddr.sin_family = AF_INET;
+    sockAddr.sin_addr.s_addr=htonl(INADDR_ANY);
+    sockAddr.sin_port = htons(ctrlSocket);
+    return sockAddr;
 }
 
 
