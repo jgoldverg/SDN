@@ -38,6 +38,9 @@
 #include <sys/select.h>
 #include <arpa/inet.h>
 #include <vector>
+#include <algorithm>
+
+
 
 uint16_t ctrlPort=0, routerPort=0, dataPort=0;
 
