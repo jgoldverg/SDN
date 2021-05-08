@@ -56,13 +56,13 @@ uint16_t routerCount;
 uint16_t routerIdx = MAX;// the max val
 uint16_t interval;
 
-std::vector<uint16_t> routerIds;
-std::vector<uint16_t> costs;
-std::vector<uint16_t> nextHops;
-std::vector<uint16_t> routerPorts;
-std::vector<uint16_t> dataPorts;
-std::vector<uint32_t> routerIps;
-std::vector<int> adjacentNodes;
+std::vector<uint16_t> routerIds(5);
+std::vector<uint16_t> costs(5);
+std::vector<uint16_t> nextHops(5);
+std::vector<uint16_t> routerPorts(5);
+std::vector<uint16_t> dataPorts(5);
+std::vector<uint32_t> routerIps(5);
+std::vector<int> adjacentNodes(5);
 
 int main(int argc, char **argv)
 {
@@ -386,11 +386,13 @@ void recvRouterUpdate(int ctrlSock){
 }
 
 void sendRoutingUpdate(){
-    uint16_t payLen=routerCount * 12, respLen;
+    uint16_t payLen= routerCount * 12, respLen;
+    std::cout << "before call to buildRouterH()" << std::endl;
     auto routerH = buildRouterH(routerPorts[currentRouter], routerIps[currentRouter],routerCount);
+    std::cout << "after call to buildRouterH()" << std::endl;
     respLen = sizeof(routerH) + payLen;
     auto routerUpdateH = new char[respLen];
-    memcpy(routerUpdateH, routerH, 12);
+    memcpy(routerUpdateH, routerH, ROUTINGUPDATEHEADERSIZE);
     free(routerH);
     for(int i = 0; i < routerCount; i++){
         struct RoutingUpdateMsg updateMsg;
@@ -411,7 +413,7 @@ void sendRoutingUpdate(){
             info.sin_addr.s_addr = htonl(routerIps[i]);
             info.sin_family = AF_INET;
             auto result = sendto(routerSock, routerUpdateH, respLen, 0, (struct sockaddr*) &info, sizeof(info));
-            if(result < 0){
+            if(result <= 0){
                 std::string e = "There was an error sending a router update response, the sento failed for some reason";
                 outError(e);
             }
@@ -425,5 +427,8 @@ bool isAdjacentTo(int i){
     }
     return false;
 }
+
+
+
 
 
