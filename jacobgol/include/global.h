@@ -2,66 +2,143 @@
 #define GLOBAL_H
 
 #include <string>
+#include <cstring>
 #include <netinet/in.h>
-#include <stdlib.h> 
+#include <stdlib.h>
 #include <structs.h>
 #include <stdint.h>
 
 #define AUTHORCTRLCODE 0
 #define AUTHORCMD "I, jacobgol, have read and understood the course academic integrity policy."
+#define MAX 65535
 
-fd_set headList, viewList;
 
+void authorCmd(int socket);
+void initResponse(char* payload, int socket);
+void routeTableResponse(int socket);
+void updateResponse(char* payload, int socket);
+void takeDown(int socket);
+void startFileResponse(char* payload, int socket, uint16_t payloadSize);
+
+void zeroOutVectors();
 void init();
+void mainMethod();
 
-void authorCmd(int sockIdx);
+void handleFileDescriptors(int topFd);
 
-int buildDataSock();//this is tcp
+int buildDataSock();//create data sockets
+int buildCtrlSock();//create Control sockets
+int buildRouterSock();//create router sockets
 
-int buildCtrlSock();//this is udp
-int topFd = 0;
+int addConn(int socket, bool ctrlOrData);//add to LinkedList
+void removeConn(int socket, bool ctrlOrData);//remove from LinkedList
 
+bool handleControlData(int socket);
+bool handleDataPacketData(int socket);
+
+char* buildRouterH(uint16_t routerPort, uint32_t routerIp, uint16_t rC);
+char* buildDataH(uint8_t tId, uint8_t ttl, uint16_t seqNum, bool lastChunk, uint32_t destIp);
+void recvRouterUpdate(int ctrlSock);
+void sendRoutingUpdate();
+void initRouter(char* payLoad);
+bool isAdjacentTo(int i);
 
 void outError(std::string message){
-	perror(message.c_str());
-	exit(EXIT_FAILURE);
-}
-
-ssize_t recvAll(int sockIdx, char* buf, ssize_t totalBytes){
-	ssize_t bytesRead = 0;
-	bytesRead = recv(sockIdx, buf, totalBytes, 0);
-	if(bytesRead == -1) return -1;
-	while(bytesRead != totalBytes){
-		bytesRead = totalBytes - bytesRead;
-		bytesRead += recv(sockIdx, buf+bytesRead,bytesRead, 0);
-	}
-	return bytesRead;
-}
-
-ssize_t sendAll(int sockIdx, char*  buf, ssize_t totalBytes){
-	ssize_t bytesRead = 0;
-	bytesRead = send(sockIdx, buf, totalBytes, 0);
-	if(bytesRead == -1) return -1;
-	while(bytesRead != totalBytes){
-		bytesRead -= totalBytes;
-		bytesRead += send(sockIdx, buf+bytesRead, bytesRead, 0);
-	}
-	return bytesRead;
-}
-
-struct in_addr ipToStruct(uint32_t ip){
-	struct in_addr temp;
-	temp.s_addr = ip;
-	return temp;
+    perror(message.c_str());
+    exit(EXIT_FAILURE);
 }
 
 struct sockaddr_in buildSockAddr(int ctrlSocket){
     struct sockaddr_in sockAddr;
-    std::memset(&sockAddr, 0,sizeof(sockAddr));
+    memset(&sockAddr, 0,sizeof(sockAddr));
     sockAddr.sin_family = AF_INET;
     sockAddr.sin_addr.s_addr=htonl(INADDR_ANY);
     sockAddr.sin_port = htons(ctrlSocket);
     return sockAddr;
+}
+
+
+ssize_t recvAll(int sockIdx, char* buf, ssize_t totalBytes){
+    ssize_t bytesRead = 0;
+    bytesRead = recv(sockIdx, buf, totalBytes, 0);
+    if(bytesRead == -1) return -1;
+    while(bytesRead != totalBytes){
+        bytesRead = totalBytes - bytesRead;
+        bytesRead += recv(sockIdx, buf+bytesRead,bytesRead, 0);
+    }
+    return bytesRead;
+}
+
+ssize_t sendAll(int sockIdx, char*  buf, ssize_t totalBytes){
+    ssize_t bytesRead = 0;
+    bytesRead = send(sockIdx, buf, totalBytes, 0);
+    if(bytesRead == -1) return -1;
+    while(bytesRead != totalBytes){
+        bytesRead -= totalBytes;
+        bytesRead += send(sockIdx, buf+bytesRead, bytesRead, 0);
+    }
+    return bytesRead;
+}
+
+//build the headers should be three: control header, router header, data header
+char* buildRouterH(uint16_t routerPort, uint32_t routerIp, uint16_t rC){
+    char* rUpdateHeader = new char[ROUTINGUPDATEHEADERSIZE];
+    struct RoutingUpdateH routingUpdateH;
+    routingUpdateH.routerCount = htons(rC);
+    routingUpdateH.routerIp = htonl(routerIp);
+    routingUpdateH.routerPort = htons(routerPort);
+    memcpy(rUpdateHeader, &routingUpdateH, ROUTINGUPDATEHEADERSIZE);
+    return rUpdateHeader;
+}
+char* buildDataH(uint8_t tId, uint8_t ttl, uint16_t seqNum, bool lastChunk, uint32_t destIp){
+    char* rUpdateH = new char[DATAPACKETHEADERSIZE];
+    struct DataPacketH dataHeader;
+    dataHeader.destIp = destIp;
+    dataHeader.ttl = ttl;
+    dataHeader.transferId = tId;
+    dataHeader.seqNum = seqNum;
+    if(lastChunk){
+        dataHeader.isLast = htons(0x8000);
+    }else{
+        dataHeader.isLast = htons(0);
+    }
+    memcpy(rUpdateH, &dataHeader, DATAPACKETHEADERSIZE);
+    return rUpdateH;
+}
+char* buildCtrlResponseH(int socket, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen){
+    struct sockaddr_in info;
+    char* buffer = new char[CTRLRESPHSIZE];
+    struct CtrlMsgRespH* header = (struct CtrlMsgRespH*) buffer;
+    socklen_t size = sizeof(struct sockaddr_in);
+    getpeername(socket, (struct sockaddr*)&info, &size);
+    memcpy(&header->ctrlIpAddress, &info.sin_addr, sizeof(struct in_addr));
+    header->controlCode = ctrlCode;
+    header->respCode = respCode;
+    header->payloadLen = htons(payLen);
+    return buffer;
+}
+
+void authorCmd(int sockIdx){
+    uint16_t messageSize = sizeof(AUTHORCMD)-1;
+    uint16_t respLen = CTRLRESPHSIZE + messageSize;
+    char* ctrlResp = new char[respLen];
+    char* ctrlRespH = buildCtrlResponseH(sockIdx, AUTHORCTRLCODE, AUTHORCTRLCODE, messageSize);
+    char* authorMessage = new char[messageSize];
+    strcpy(authorMessage, AUTHORCMD);
+    memcpy(ctrlResp, ctrlRespH, CTRLRESPHSIZE);
+    memcpy(ctrlResp+CTRLRESPHSIZE, authorMessage, messageSize);
+    sendAll(sockIdx, ctrlResp, respLen);
+    delete[](ctrlRespH);
+    delete[](authorMessage);
+    delete[](ctrlResp);
+}
+
+
+void takeDown(int socket){
+    char* header = buildCtrlResponseH(socket, 4,0,0);
+    sendAll(socket, header, 8);
+    free(header);
+    exit(EXIT_SUCCESS);
 }
 
 

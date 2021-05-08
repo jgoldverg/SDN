@@ -4,14 +4,29 @@
 #include <stdint.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
+#include <unistd.h>
+#include <netinet/in.h>
+
 
 #define CTRLHEADERSIZE 8
 #define CTRLRESPHSIZE 8
+#define ROUTINGUPDATEHEADERSIZE 8
+#define ROUTINGUPDATESTRUCTSIZE 12
 #define CTRLCCOFFSET 0x04 //used for the response as well
 #define CTRLPAYLOADOFF 0x06 //used for the response as well
 #define CTRLRESPRESPCODEOFFSET 0x05 
+#define DATAPACKETHEADERSIZE 12
+//offset constants
+#define OFFSETTWO 2
+#define OFFSETFOUR 4
+#define OFFSETSIX 6
+#define OFFSETEIGHT 8
+#define OFFSETTEN 10
+#define OFFSETTWELVE 12
+#define OFFSETSIXTEEN 16
+#define OFFSETEIGHTEEN 18
 
-char*  buildCtrlResponseH(int sockIdx, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen);
+char* buildCtrlResponseH(int sockIdx, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen);
 
 struct __attribute__((packed)) CtrlMsgH {
 	uint32_t destIpAddress;
@@ -52,21 +67,41 @@ struct __attribute__((packed)) DataPacketH{
 	uint32_t destIp;
 	uint16_t seqNum;
 	uint16_t padding;
-	uint8_t transferId;
-	uint8_t ttl;
+    uint16_t isLast;
+    uint8_t transferId;
+    uint8_t ttl;
 };
 
 struct DataConn{
     int sockfd;
     LIST_ENTRY(DataConn) next;
-}*dataList, *dataConnTemp;
+}*dataConn, *dataConnTemp;
 LIST_HEAD(DataConnHead, DataConn) dataConnList;
 
 struct ControlConn{
     int sockfd;
     LIST_ENTRY(ControlConn) next;
-}*ctrlList, *ctrlListTemp;
+}*conn, *ctrlListTemp;
 LIST_HEAD(CtrlConnHead, ControlConn) ctrlConnList;
+
+bool isCtrlFd(int socket){
+    LIST_FOREACH(conn, &ctrlConnList, next){
+        if(conn->sockfd == socket) return true;
+    }
+    return false;
+}
+
+bool isDataFd(int socket){
+    LIST_FOREACH(dataConn, &dataConnList, next){
+        if(dataConn->sockfd == socket) return true;
+    }
+    return false;
+}
+
+
+
+
+
 
 
 #endif
