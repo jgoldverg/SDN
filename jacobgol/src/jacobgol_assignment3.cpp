@@ -39,6 +39,7 @@
 #include <arpa/inet.h>
 #include <vector>
 #include <algorithm>
+#include <iostream>
 
 
 
@@ -73,13 +74,17 @@ int main(int argc, char **argv)
     TOPFD = ctrlSock;
     timeVal.tv_sec = TIMEOUTVAL;
     timeVal.tv_usec = 0;
+    std::cout << "entering the main method" << std::endl;
     mainMethod();
 	return 0;
 }
 void mainMethod(){
+    std::cout << "entered the mainMethod()" << std::endl;
     while (true){
         viewList = headList;
+        std::cout << "before the select" << std::endl;
         auto selectRepeat = select(TOPFD+1, &viewList, NULL, NULL, &timeVal);
+        std::cout << "after the select" << std::endl;
         if(selectRepeat < 0){
             std::string e = "Could not select for some reason";
             outError(e);
@@ -87,8 +92,10 @@ void mainMethod(){
         if(selectRepeat == 0){
             timeVal.tv_sec = TIMEOUTVAL;
             timeVal.tv_usec=0;
+            std::cout << "before the sendRoutingUpdate()" << std::endl;
             sendRoutingUpdate();
         }
+        std::cout << "before handleFileDescriptors()" << std::endl;
         handleFileDescriptors(TOPFD);
     }
 }
