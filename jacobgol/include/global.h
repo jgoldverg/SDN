@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <structs.h>
 #include <stdint.h>
+#include <sys/socket.h>
 
 #define AUTHORCTRLCODE 0
 #define AUTHORCMD "I, jacobgol, have read and understood the course academic integrity policy."
@@ -57,21 +58,19 @@ struct sockaddr_in buildSockAddr(int ctrlSocket){
 ssize_t recvAll(int sockIdx, char* buf, ssize_t totalBytes){
     ssize_t bytesRead = 0;
     bytesRead = recv(sockIdx, buf, totalBytes, 0);
-    if(bytesRead == -1) return -1;
+    if(bytesRead == 0) return -1;
     while(bytesRead != totalBytes){
-        bytesRead = totalBytes - bytesRead;
-        bytesRead += recv(sockIdx, buf+bytesRead,bytesRead, 0);
+        bytesRead+= recv(sockIdx, buf+bytesRead, totalBytes-bytesRead,0);
     }
     return bytesRead;
 }
 
-ssize_t sendAll(int sockIdx, char*  buf, ssize_t totalBytes){
+ssize_t sendAll(int sockIdx, char* buf, ssize_t totalBytes){
     ssize_t bytesRead = 0;
     bytesRead = send(sockIdx, buf, totalBytes, 0);
     if(bytesRead == -1) return -1;
     while(bytesRead != totalBytes){
-        bytesRead -= totalBytes;
-        bytesRead += send(sockIdx, buf+bytesRead, bytesRead, 0);
+        bytesRead += send(sockIdx, buf+bytesRead, totalBytes-bytesRead, 0);
     }
     return bytesRead;
 }
@@ -133,21 +132,6 @@ void authorCmd(int sockIdx){
     delete[](ctrlRespH);
 }
 
-//this is the old version the only difference is how I wrote it out tbh.
-//void authorCmd(int sockIdx){
-//    uint16_t messageSize = sizeof(AUTHORCMD)-1;
-//    uint16_t respLen = CTRLRESPHSIZE + messageSize;
-//    char* ctrlResp = new char[respLen];
-//    char* ctrlRespH = buildCtrlResponseH(sockIdx, AUTHORCTRLCODE, AUTHORCTRLCODE, messageSize);
-//    char* authorMessage = new char[messageSize];
-//    strcpy(authorMessage, AUTHORCMD);
-//    memcpy(ctrlResp, ctrlRespH, CTRLRESPHSIZE);
-//    memcpy(ctrlResp+CTRLRESPHSIZE, authorMessage, messageSize);
-//    sendAll(sockIdx, ctrlResp, respLen);
-//    delete[](ctrlRespH);
-//    delete[](authorMessage);
-//    delete[](ctrlResp);
-//}
 
 
 void takeDown(int socket){
