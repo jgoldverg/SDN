@@ -30,22 +30,22 @@ char* buildCtrlResponseH(int sockIdx, uint8_t ctrlCode, uint8_t respCode, uint16
 
 struct __attribute__((packed)) CtrlMsgH {
 	uint32_t destIpAddress;
-	uint16_t payloadLen;
-	uint8_t controlCode;
-	uint8_t respTime;
+    uint8_t controlCode;
+    uint8_t respTime;
+    uint16_t payloadLen;
 };
 
 struct __attribute__((packed)) CtrlMsgRespH{
 	uint32_t ctrlIpAddress;
-	uint16_t payloadLen; 
 	uint8_t controlCode;
-	uint8_t respCode;
+    uint8_t respCode;
+    uint16_t payloadLen;
 };
 
 struct __attribute__((packed)) RoutingUpdateH {
-	uint32_t routerIp;
 	uint16_t routerCount;
-	uint16_t routerPort;
+    uint16_t routerPort;
+    uint32_t routerIp;
 };
 
 struct __attribute__((packed)) RoutingUpdateMsg{

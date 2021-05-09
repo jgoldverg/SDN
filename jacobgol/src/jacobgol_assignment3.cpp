@@ -82,18 +82,22 @@ void mainMethod(){
     std::cout << "entered the mainMethod()" << std::endl;
     while (true){
         viewList = headList;
-        std::cout << "before the select" << std::endl;
-        auto selectRepeat = select(TOPFD+1, &viewList, NULL, NULL, &timeVal);
-        std::cout << "after the select" << std::endl;
-        if(selectRepeat < 0){
-            std::string e = "Could not select for some reason";
-            outError(e);
+        if(routerSock > 0){
+            FD_SET(routerSock, &headList);
         }
+        if(routerSock > TOPFD){
+            TOPFD = routerSock;
+        }
+        viewList = headList;
+        auto selectRepeat = select(TOPFD+1, &viewList, NULL, NULL, &timeVal);
         if(selectRepeat == 0){
             timeVal.tv_sec = TIMEOUTVAL;
             timeVal.tv_usec=0;
             std::cout << "before the sendRoutingUpdate()" << std::endl;
-            sendRoutingUpdate();
+            if(routerSock > 0){
+                sendRoutingUpdate();
+            }
+            continue;
         }
         std::cout << "before handleFileDescriptors()" << std::endl;
         handleFileDescriptors(TOPFD);
@@ -110,7 +114,7 @@ void handleFileDescriptors(int TOPFD){
             }
         }else if(ctrlSock == routerSock){
             recvRouterUpdate(ctrlSock);
-        }else if(ctrlSock == dataSock){
+        }else if(ctrlSock == dataSock){ //this prob needs to go as i wont get it done
             int dataFd = addConn(i, true);
             FD_SET(dataFd, &headList);
             if(TOPFD < dataFd) TOPFD = dataFd;
@@ -171,7 +175,7 @@ int buildDataSock(){
     dataSock = socket(AF_INET, SOCK_STREAM, 0);
     auto num=1;
     setsockopt(dataSock, SOL_SOCKET,SO_REUSEADDR, &num, sizeof(int));
-    memset(&info, '\0', sizeof(info));
+    memset(&info, 0, sizeof(info));
     info.sin_addr.s_addr = htonl(INADDR_ANY);
     info.sin_port = htons(dataPorts[currentRouter]);
     bind(dataSock, (struct sockaddr*)&info, sizeof(socklen_t));
@@ -218,10 +222,9 @@ void removeConn(int socket, bool ctrlOrData){
     close(socket);
 }
 bool handleControlData(int socket){
-    auto controlData = new char [CTRLHEADERSIZE];
-    memset(controlData, '\0', CTRLHEADERSIZE);
-    int bytesRead = recvAll(socket, controlData, CTRLHEADERSIZE);
-    if(bytesRead < 0){
+    auto controlData = new char [sizeof(char)*CTRLHEADERSIZE];
+    memset(controlData, 0, CTRLHEADERSIZE);
+    if(recvAll(socket, controlData, CTRLHEADERSIZE) < 0){
         removeConn(socket, false);
         free(controlData);
         return false;
@@ -232,7 +235,7 @@ bool handleControlData(int socket){
     char* payload;
     if(payLen != 0){
         payload = new char[payLen];
-        memset(payload, '\0', payLen);
+        memset(payload, 0, payLen);
         auto read = recvAll(socket, payload, payLen);
         if(read < 0){
             removeConn(socket, false);
@@ -290,9 +293,8 @@ void initRouter(char* payLoad){
     }
 }
 void initResponse(char* payload, int socket){
-    uint16_t payLen=0;
     initRouter(payload);
-    auto respH = buildCtrlResponseH(socket, 1,0,payLen);
+    auto respH = buildCtrlResponseH(socket, 1,0,0);
     sendAll(socket, respH, CTRLRESPHSIZE);
     free(respH);
     routerSock = buildRouterSock();
@@ -308,7 +310,7 @@ void initResponse(char* payload, int socket){
 void routeTableResponse(int socket){
     uint16_t payLen=routerCount*8;
     auto respRH = buildCtrlResponseH(socket, 2,0,payLen);
-    uint16_t fullLength = routerCount * 8;
+    uint16_t fullLength = payLen + 8;
     auto respR = new char [fullLength];
     memcpy(&respR, respRH, CTRLRESPHSIZE);//copy in the header
     free(respRH);
@@ -339,8 +341,13 @@ void updateResponse(char* payload, int socket){
     memcpy(&cost, &payload[2], sizeof(uint16_t));//not sure if this works
     auto respH = buildCtrlResponseH(socket, 3,0,0);
     for(int i = 0; i < routerCount; i++){
-        if(routerIps[i] == cost){
+        if(routerIds[i] == routerId){
             costs[i] = cost;
+            if(cost == MAX){
+                nextHops[i] = MAX;
+            }else{
+                nextHops[i] = routerId;
+            }
         }
     }
     sendAll(socket, respH, 8);
@@ -355,43 +362,40 @@ bool handleDataPacketData(int socket){
 }
 
 void recvRouterUpdate(int ctrlSock){
-    auto totalLength = ROUTINGUPDATEHEADERSIZE + routerCount * sizeof(RoutingUpdateMsg);
+    auto totalLength = OFFSETEIGHT + (OFFSETTWELVE*routerCount);
     auto routerMessage = new char [totalLength];
     struct sockaddr routerInfo;
     socklen_t routerInfoLen = sizeof(routerInfo);
-    memset(&routerInfo, '\0', routerInfoLen);
+    memset(&routerInfo, 0, routerInfoLen);
     recvfrom(ctrlSock, routerMessage, totalLength, 0, &routerInfo, &routerInfoLen);
-    uint16_t fieldCount, rPort;
-//    fieldCount = routerMessage[0] << 8 | routerMessage[1];
-//    rPort = routerMessage[2] << 8 | routerMessage[3];
-    memcpy(&fieldCount, &routerMessage[0], sizeof(uint16_t));//not sure if this will work
-    memcpy(&rPort, &routerMessage[2], sizeof(uint16_t));//not sure how this will work
+    auto fieldCount = (uint8_t)routerMessage[0] << 8 | (uint8_t)routerMessage[1];
+    auto rPort = (uint8_t)routerMessage[2] << 8 | (uint8_t)routerMessage[3];
     auto offset = 18;
-    for(int i = 0; i < fieldCount; i++){
-        uint16_t iRouterCost = routerMessage[offset] | routerMessage[offset+1];
-        offset+=12;
-        auto tempCost = costs[adjacentRouter]+iRouterCost;
-        if(iRouterCost == MAX && (costs[i] > tempCost)){
-            costs[i] = tempCost;
-            adjacentNodes[i] = routerIds[adjacentRouter];
-        }
-    }
+    auto temp = -1;
     for(int i = 0; i < routerCount; i++){
         if(routerPorts[i] == rPort){
-            adjacentRouter = i;
-            return;
+            temp = i;
+            break;
         }
     }
-
+    for(int i = 0; i < fieldCount; i++){
+        auto iRouterCost = routerMessage[offset] << 8 | routerMessage[offset+1] << 8;
+        if(iRouterCost != MAX && (costs[i] > costs[temp]+iRouterCost)){
+            costs[i] = costs[temp]+iRouterCost;
+            nextHops[i] = routerIds[temp];
+        }
+        offset+=ROUTINGUPDATESTRUCTSIZE;
+    }
 }
 
 void sendRoutingUpdate(){
-    uint16_t payLen= routerCount * 12, respLen;
-    std::cout << "before call to buildRouterH()" << std::endl;
+    uint16_t payLen= routerCount * ROUTINGUPDATESTRUCTSIZE, respLen;
+    int bufferSize = OFFSETEIGHT+(OFFSETTWELVE*routerCount);
     auto routerH = buildRouterH(routerPorts[currentRouter], routerIps[currentRouter],routerCount);
-    std::cout << "after call to buildRouterH()" << std::endl;
     respLen = sizeof(routerH) + payLen;
-    auto routerUpdateH = new char[respLen];
+    auto routerUpdateH = new char[bufferSize];
+    memset(&routerUpdateH, 0, bufferSize);
+
     memcpy(routerUpdateH, routerH, ROUTINGUPDATEHEADERSIZE);
     free(routerH);
     for(int i = 0; i < routerCount; i++){
@@ -406,28 +410,19 @@ void sendRoutingUpdate(){
     for(int i = 0; i < routerCount; i++){
         if(i == currentRouter) continue;
         if(costs[i] == MAX) continue;
-        auto nodetoHave = routerIds[i];
-        if(adjacentNodes[i] > 0 && (std::find(nextHops.begin(), nextHops.end(), nodetoHave)) != nextHops.end()){
+        if(adjacentNodes[i] > 0 && costs[i] != MAX && (std::find(nextHops.begin(), nextHops.end(), routerIds[i])) != nextHops.end()){
             struct sockaddr_in info;
+            memset(&info, 0, sizeof(info));
             info.sin_port = htons(routerPorts[i]);
             info.sin_addr.s_addr = htonl(routerIps[i]);
             info.sin_family = AF_INET;
-            auto result = sendto(routerSock, routerUpdateH, respLen, 0, (struct sockaddr*) &info, sizeof(info));
-            if(result <= 0){
-                std::string e = "There was an error sending a router update response, the sento failed for some reason";
-                outError(e);
-            }
+            sendto(routerSock, routerUpdateH, respLen, 0, (struct sockaddr*) &info, sizeof(info));
         }
     }
-}
-
-bool isAdjacentTo(int i){
-    for(int idx = 0; idx < routerCount; idx++){
-        if(nextHops[idx] == routerIds[i]) return true;
+    if(routerUpdateH){
+        free(routerUpdateH);
     }
-    return false;
 }
-
 
 
 

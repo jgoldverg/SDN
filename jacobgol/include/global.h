@@ -20,10 +20,10 @@ void updateResponse(char* payload, int socket);
 void takeDown(int socket);
 void startFileResponse(char* payload, int socket, uint16_t payloadSize);
 
+
 void zeroOutVectors();
 void init();
 void mainMethod();
-
 void handleFileDescriptors(int topFd);
 
 int buildDataSock();//create data sockets
@@ -41,13 +41,11 @@ char* buildDataH(uint8_t tId, uint8_t ttl, uint16_t seqNum, bool lastChunk, uint
 void recvRouterUpdate(int ctrlSock);
 void sendRoutingUpdate();
 void initRouter(char* payLoad);
-bool isAdjacentTo(int i);
 
 void outError(std::string message){
     perror(message.c_str());
     exit(EXIT_FAILURE);
 }
-
 struct sockaddr_in buildSockAddr(int ctrlSocket){
     struct sockaddr_in sockAddr;
     memset(&sockAddr, 0,sizeof(sockAddr));
@@ -56,8 +54,6 @@ struct sockaddr_in buildSockAddr(int ctrlSocket){
     sockAddr.sin_port = htons(ctrlSocket);
     return sockAddr;
 }
-
-
 ssize_t recvAll(int sockIdx, char* buf, ssize_t totalBytes){
     ssize_t bytesRead = 0;
     bytesRead = recv(sockIdx, buf, totalBytes, 0);
@@ -82,7 +78,7 @@ ssize_t sendAll(int sockIdx, char*  buf, ssize_t totalBytes){
 
 //build the headers should be three: control header, router header, data header
 char* buildRouterH(uint16_t routerPort, uint32_t routerIp, uint16_t rC){
-    char* rUpdateHeader = new char[ROUTINGUPDATEHEADERSIZE];
+    char* rUpdateHeader = new char [ROUTINGUPDATEHEADERSIZE];
     struct RoutingUpdateH routingUpdateH;
     routingUpdateH.routerCount = htons(rC);
     routingUpdateH.routerIp = htonl(routerIp);
@@ -105,33 +101,53 @@ char* buildDataH(uint8_t tId, uint8_t ttl, uint16_t seqNum, bool lastChunk, uint
     memcpy(rUpdateH, &dataHeader, DATAPACKETHEADERSIZE);
     return rUpdateH;
 }
-char* buildCtrlResponseH(int socket, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen){
-    struct sockaddr_in info;
-    char* buffer = new char[CTRLRESPHSIZE];
-    struct CtrlMsgRespH* header = (struct CtrlMsgRespH*) buffer;
+
+
+char* buildCtrlResponseH(int socket, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen) {
+    struct sockaddr_in sockaddr;
     socklen_t size = sizeof(struct sockaddr_in);
-    getpeername(socket, (struct sockaddr*)&info, &size);
-    memcpy(&header->ctrlIpAddress, &info.sin_addr, sizeof(struct in_addr));
+    char* buffer = new char[sizeof(char)*CTRLRESPHSIZE];
+    struct CtrlMsgRespH* header = (struct CtrlMsgRespH*) buffer;
+    getpeername(socket, (struct sockaddr*)&sockaddr, &size);
+    memcpy(&(header->ctrlIpAddress), &(sockaddr.sin_addr), sizeof(struct in_addr));
     header->controlCode = ctrlCode;
     header->respCode = respCode;
-    header->payloadLen = htons(payLen);
+    header->payloadLen = payLen;
     return buffer;
 }
 
 void authorCmd(int sockIdx){
-    uint16_t messageSize = sizeof(AUTHORCMD)-1;
-    uint16_t respLen = CTRLRESPHSIZE + messageSize;
-    char* ctrlResp = new char[respLen];
-    char* ctrlRespH = buildCtrlResponseH(sockIdx, AUTHORCTRLCODE, AUTHORCTRLCODE, messageSize);
-    char* authorMessage = new char[messageSize];
-    strcpy(authorMessage, AUTHORCMD);
+    uint16_t  payLen, respLen;
+    char* ctrlRespH, *ctrlRespPay, *ctrlResp;
+    payLen = sizeof(AUTHORCMD)-1;//remove the null char
+    ctrlRespPay = new char [payLen];
+    memcpy(ctrlRespPay, AUTHORCMD, payLen);
+    ctrlRespH = buildCtrlResponseH(sockIdx, 0,0,payLen);
+    respLen = CTRLRESPHSIZE+payLen;
+    ctrlResp = new char [respLen];
     memcpy(ctrlResp, ctrlRespH, CTRLRESPHSIZE);
-    memcpy(ctrlResp+CTRLRESPHSIZE, authorMessage, messageSize);
+    memcpy(ctrlResp+CTRLRESPHSIZE, ctrlRespPay, payLen);
     sendAll(sockIdx, ctrlResp, respLen);
-    delete[](ctrlRespH);
-    delete[](authorMessage);
     delete[](ctrlResp);
+    delete[](ctrlRespPay);
+    delete[](ctrlRespH);
 }
+
+//this is the old version the only difference is how I wrote it out tbh.
+//void authorCmd(int sockIdx){
+//    uint16_t messageSize = sizeof(AUTHORCMD)-1;
+//    uint16_t respLen = CTRLRESPHSIZE + messageSize;
+//    char* ctrlResp = new char[respLen];
+//    char* ctrlRespH = buildCtrlResponseH(sockIdx, AUTHORCTRLCODE, AUTHORCTRLCODE, messageSize);
+//    char* authorMessage = new char[messageSize];
+//    strcpy(authorMessage, AUTHORCMD);
+//    memcpy(ctrlResp, ctrlRespH, CTRLRESPHSIZE);
+//    memcpy(ctrlResp+CTRLRESPHSIZE, authorMessage, messageSize);
+//    sendAll(sockIdx, ctrlResp, respLen);
+//    delete[](ctrlRespH);
+//    delete[](authorMessage);
+//    delete[](ctrlResp);
+//}
 
 
 void takeDown(int socket){
