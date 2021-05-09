@@ -64,6 +64,33 @@ std::vector<uint16_t> dataPorts(5);
 std::vector<uint32_t> routerIps(5);
 std::vector<int> adjacentNodes(5);
 
+struct DataConn{
+    int sockfd;
+    LIST_ENTRY(DataConn) next;
+}*dataConn, *dataConnTemp;
+LIST_HEAD(DataConnHead, DataConn) dataConnList;
+
+struct ControlConn{
+    int sockfd;
+    LIST_ENTRY(ControlConn) next;
+}*conn, *ctrlListTemp;
+LIST_HEAD(CtrlConnHead, ControlConn) ctrlConnList;
+
+bool isCtrlFd(int socket){
+    LIST_FOREACH(conn, &ctrlConnList, next){
+        if(conn->sockfd == socket) return true;
+    }
+    return false;
+}
+
+bool isDataFd(int socket){
+    LIST_FOREACH(dataConn, &dataConnList, next){
+        if(dataConn->sockfd == socket) return true;
+    }
+    return false;
+}
+
+
 int main(int argc, char **argv)
 {
 	ctrlPort = atoi(argv[1]);
