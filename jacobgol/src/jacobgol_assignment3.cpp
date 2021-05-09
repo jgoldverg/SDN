@@ -112,9 +112,9 @@ void handleFileDescriptors(int TOPFD){
                 FD_SET(addedFd, &headList);
                 if(TOPFD < addedFd) TOPFD = addedFd;
             }
-        }else if(ctrlSock == routerSock){
+        }else if(i == routerSock){
             recvRouterUpdate(ctrlSock);
-        }else if(ctrlSock == dataSock){ //this prob needs to go as i wont get it done
+        }else if(i == dataSock){ //this prob needs to go as i wont get it done
             int dataFd = addConn(i, true);
             FD_SET(dataFd, &headList);
             if(TOPFD < dataFd) TOPFD = dataFd;
