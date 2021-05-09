@@ -24,7 +24,7 @@ void startFileResponse(char* payload, int socket, uint16_t payloadSize);
 void zeroOutVectors();
 void init();
 void mainMethod();
-void handleFileDescriptors(int topFd);
+void handleFileDescriptors();
 
 int buildDataSock();//create data sockets
 int buildCtrlSock();//create Control sockets

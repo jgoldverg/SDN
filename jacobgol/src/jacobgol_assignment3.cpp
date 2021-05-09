@@ -97,15 +97,18 @@ void mainMethod(){
             if(routerSock > 0){
                 sendRoutingUpdate();
             }
-            continue;
         }
         std::cout << "before handleFileDescriptors()" << std::endl;
-        handleFileDescriptors(TOPFD);
+        handleFileDescriptors();
     }
 }
-void handleFileDescriptors(int TOPFD){
+void handleFileDescriptors(){
     int addedFd;
+    std::cout << "The top fd is " << TOPFD << std::endl;
+    std::cout << "The ctrlSock is " << ctrlSock << std::endl;
+    std::cout << "The routerSock is " << routerSock << std::endl;
     for(int i = 0; i <= TOPFD; i++){ //i is the actual sockets number we can use.
+        std::cout << i << std::endl;
         if(FD_ISSET(i, &viewList)){
             if(i == ctrlSock){
                 addedFd = addConn(i, false);
@@ -222,22 +225,22 @@ void removeConn(int socket, bool ctrlOrData){
     close(socket);
 }
 bool handleControlData(int socket){
-    auto controlData = new char [sizeof(char)*CTRLHEADERSIZE];
-    memset(controlData, 0, CTRLHEADERSIZE);
-    if(recvAll(socket, controlData, CTRLHEADERSIZE) < 0){
+    auto controlHeader = new char [sizeof(char)*CTRLHEADERSIZE];
+    memset(controlHeader, 0, CTRLHEADERSIZE);
+    if(recvAll(socket, controlHeader, CTRLHEADERSIZE) < 0){
         removeConn(socket, false);
-        free(controlData);
+        delete[](controlHeader);
         return false;
     }
-    struct CtrlMsgH* ctrlMsg = (struct CtrlMsgH*) controlData;
-    uint8_t cc = ctrlMsg->controlCode;
-    u_int16_t payLen = ntohs(ctrlMsg->payloadLen);
+    struct CtrlMsgH* ctrlMsg = (struct CtrlMsgH*) controlHeader;
+    auto cc = ctrlMsg->controlCode;
+    auto payLen = ntohs(ctrlMsg->payloadLen);
     char* payload;
+    delete[](controlHeader);
     if(payLen != 0){
-        payload = new char[payLen];
+        payload = new char[sizeof(char) * payLen];
         memset(payload, 0, payLen);
-        auto read = recvAll(socket, payload, payLen);
-        if(read < 0){
+        if(recvAll(socket, payload, payLen) < 0){
             removeConn(socket, false);
             delete[](payload);
             return false;
@@ -261,7 +264,7 @@ bool handleControlData(int socket){
         //send file response
         startFileResponse(payload, socket, payLen);
     }
-    if(payLen != 0) delete[]controlData;
+    if(payLen != 0) delete[](ctrlMsg);
     return true;
 }
 void initRouter(char* payLoad){
@@ -389,14 +392,12 @@ void recvRouterUpdate(int ctrlSock){
 }
 
 void sendRoutingUpdate(){
-    uint16_t payLen= routerCount * ROUTINGUPDATESTRUCTSIZE, respLen;
+    uint16_t payLen = routerCount * ROUTINGUPDATESTRUCTSIZE, respLen=ROUTINGUPDATEHEADERSIZE + payLen;
     int bufferSize = OFFSETEIGHT+(OFFSETTWELVE*routerCount);
-    auto routerH = buildRouterH(routerPorts[currentRouter], routerIps[currentRouter],routerCount);
-    respLen = sizeof(routerH) + payLen;
-    auto routerUpdateH = new char[bufferSize];
-    memset(&routerUpdateH, 0, bufferSize);
-
-    memcpy(routerUpdateH, routerH, ROUTINGUPDATEHEADERSIZE);
+    char* routerH = buildRouterH(routerPorts[currentRouter], routerIps[currentRouter],routerCount);
+    char* routerUpdateResp = new char[bufferSize];
+    memset(&routerUpdateResp, 0, bufferSize);
+    memcpy(routerUpdateResp, routerH, ROUTINGUPDATEHEADERSIZE);
     free(routerH);
     for(int i = 0; i < routerCount; i++){
         struct RoutingUpdateMsg updateMsg;
@@ -405,7 +406,7 @@ void sendRoutingUpdate(){
         updateMsg.routerIp = htonl(routerIps[i]);
         updateMsg.routerPort = htons(routerPorts[i]);
         updateMsg.padding = htons(0);
-        memcpy(routerUpdateH+ROUTINGUPDATEHEADERSIZE+(i*sizeof(RoutingUpdateMsg)), &updateMsg, sizeof(RoutingUpdateMsg));
+        memcpy(routerUpdateResp+ROUTINGUPDATEHEADERSIZE+(i*sizeof(RoutingUpdateMsg)), &updateMsg, ROUTINGUPDATESTRUCTSIZE);
     }
     for(int i = 0; i < routerCount; i++){
         if(i == currentRouter) continue;
@@ -416,11 +417,11 @@ void sendRoutingUpdate(){
             info.sin_port = htons(routerPorts[i]);
             info.sin_addr.s_addr = htonl(routerIps[i]);
             info.sin_family = AF_INET;
-            sendto(routerSock, routerUpdateH, respLen, 0, (struct sockaddr*) &info, sizeof(info));
+            sendto(routerSock, routerUpdateResp, respLen, 0, (struct sockaddr*) &info, sizeof(info));
         }
     }
-    if(routerUpdateH){
-        free(routerUpdateH);
+    if(routerUpdateResp){
+        free(routerUpdateResp);
     }
 }
 
