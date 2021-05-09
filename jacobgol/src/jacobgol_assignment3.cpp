@@ -169,20 +169,16 @@ int buildCtrlSock(){
         std::string e = "issue creating the socket";
         outError(e);
     }
-    int num=1;
-    if(setsockopt(so, SOL_SOCKET,SO_REUSEADDR, &num, sizeof(int))<0){
+    if(setsockopt(so, SOL_SOCKET,SO_REUSEADDR, (int[]){1}, sizeof(int))<0){
         std::string e ="error making control socket reuseable";
         outError(e);
     }
-    struct sockaddr_in sockAddr = buildSockAddr(ctrlSock);
-    if(bind(so, (struct sockaddr*)&sockAddr, sizeof(sockAddr))<0){
-        std::string e = "error binding to the control socket";
-        outError(e);
-    }
-    if(listen(so, 5) < 0){
-        std::string e = "failed in listening to the ctrlSocket";
-        outError(e);
-    }
+    struct sockaddr_in sockAddr = buildSockAddr(ctrlPort);
+    sockAddr.sin_family = AF_INET;
+    sockAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    sockAddr.sin_port = htons(ctrlPort);
+    bind(so, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
+    listen(so, 5);
     LIST_INIT(&ctrlConnList);
     return so;
 }
@@ -357,6 +353,7 @@ void routeTableResponse(int socket){
     sendAll(socket, respR, fullLength);
     free(respR);
 }
+
 void zeroOutVectors(){
     for(int i = 0; i < routerCount; i++){
         costs[i] = MAX;
