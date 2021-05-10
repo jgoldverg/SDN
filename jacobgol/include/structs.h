@@ -26,7 +26,6 @@
 #define OFFSETSIXTEEN 16
 #define OFFSETEIGHTEEN 18
 
-
 struct __attribute__((packed)) CtrlMsgH {
 	uint32_t destIpAddress;
     uint8_t controlCode;

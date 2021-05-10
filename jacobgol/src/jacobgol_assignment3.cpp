@@ -211,8 +211,8 @@ void initResponse(char* payload, int socket){
 }
 void updateResponse(char* payload, int socket){
     uint16_t routerId, cost;
-    routerId = (uint16_t) (payload[0] << 8 | payload[1]);
-    cost = (uint16_t)(payload[2] << 8 | payload[3]);
+    routerId = (uint8_t) (payload[0] << 8 | payload[1]);
+    cost = (uint8_t)(payload[2] << 8 | payload[3]);
 //    memcpy(&routerId, &payload[0], sizeof(uint16_t));//not sure if this works
 //    memcpy(&cost, &payload[2], sizeof(uint16_t));//not sure if this works
     auto respH = buildCtrlResponseH(socket, 3,0,0);
@@ -234,6 +234,7 @@ void routeTableResponse(int socket){
     auto respRH = buildCtrlResponseH(socket, 2,0,payLen);
     uint16_t fullLength = payLen + 8;
     auto respR = new char [fullLength];
+    memcpy(respR, 0, sizeof(fullLength));
     memcpy(&respR, respRH, CTRLRESPHSIZE);//copy in the header
     free(respRH);
     for(int i = 0; i < routerCount; i++){
@@ -242,7 +243,7 @@ void routeTableResponse(int socket){
         routerLoad.cost = htons(costs[i]);
         routerLoad.nextHopId = htons(nextHops[i]);
         routerLoad.padding = htons(0);
-        memcpy(respR + (CTRLRESPHSIZE+(i*8)), &routerLoad, sizeof(routerLoad));
+        memcpy(respR + (CTRLRESPHSIZE+(i*8)), &routerLoad, 8);
     }
     sendAll(socket, respR, fullLength);
     free(respR);
