@@ -70,11 +70,4 @@ struct __attribute__((packed)) DataPacketH{
     uint8_t ttl;
 };
 
-
-
-
-
-
-
-
 #endif

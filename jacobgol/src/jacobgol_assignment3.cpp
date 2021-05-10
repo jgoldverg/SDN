@@ -34,13 +34,23 @@
 #include <cstring>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include "networkUtil.h"
 #include <sys/select.h>
 #include <arpa/inet.h>
 #include <vector>
 #include <algorithm>
 #include <iostream>
 
+struct DataConn{
+    int sockfd;
+    LIST_ENTRY(DataConn) next;
+}*dataConn, *dataConnTemp;
+LIST_HEAD(DataConnHead, DataConn) dataConnList;
+
+struct ControlConn{
+    int sockfd;
+    LIST_ENTRY(ControlConn) next;
+}*conn, *ctrlListTemp;
+LIST_HEAD(CtrlConnHead, ControlConn) ctrlConnList;
 
 
 uint16_t ctrlPort=0, routerPort=0, dataPort=0;
@@ -95,8 +105,8 @@ void mainMethod(){
     }
 }
 void handleFileDescriptors(){
-    int addedFd;
-    for(int i = 0; i <= TOPFD; i++){ //i is the idx of the actual sockets we can use
+    int addedFd, i;
+    for(i = 0; i <= TOPFD; i++){ //i is the idx of the actual sockets we can use
         if(FD_ISSET(i, &viewList)){
             if(i == ctrlSock){
                 addedFd = addConn(i, false);
@@ -368,7 +378,10 @@ int buildDataSock(){
     struct sockaddr_in info;
     dataSock = socket(AF_INET, SOCK_STREAM, 0);
     auto num=1;
-    setsockopt(dataSock, SOL_SOCKET,SO_REUSEADDR, &num, sizeof(int));
+    if(setsockopt(dataSock, SOL_SOCKET,SO_REUSEADDR, &num, sizeof(int)) < 0){
+        std::string e = "there was an error with set sockOpt in data sock";
+        outError(e);
+    }
     memset(&info, 0, sizeof(info));
     info.sin_addr.s_addr = htonl(INADDR_ANY);
     info.sin_port = htons(dataPorts[currentRouter]);
@@ -385,6 +398,145 @@ bool isAdjacent(int index){
     }
     return false;
 }
+
+
+bool isCtrlFd(int socket){
+    LIST_FOREACH(conn, &ctrlConnList, next){
+        if(conn->sockfd == socket) return true;
+    }
+    return false;
+}
+bool isDataFd(int socket){
+    LIST_FOREACH(dataConn, &dataConnList, next){
+        if(dataConn->sockfd == socket) return true;
+    }
+    return false;
+}
+
+//add & remove connection either data or control connections. As routers use UDP so no connections
+int addConn(int socket, bool ctrlOrData) {
+    struct sockaddr_in remoteHost;
+    socklen_t addrLength = sizeof(remoteHost);
+    int fd = accept(socket, (struct sockaddr *) &remoteHost, &addrLength);
+    if (fd < 0) {
+        std::string e = "Error adding a new control file descriptor";
+        outError(e);
+    }
+    if (!ctrlOrData) {
+        conn = new ControlConn();
+        conn->sockfd = fd;
+        LIST_INSERT_HEAD(&ctrlConnList, conn, next);
+    } else {
+        dataConn = new DataConn();
+        dataConn->sockfd = fd;
+        LIST_INSERT_HEAD(&dataConnList, dataConn, next);
+    }
+    return fd;
+}
+void removeConn(int socket, bool ctrlOrData){
+    if(!ctrlOrData){
+        LIST_FOREACH(conn, &ctrlConnList, next){
+            if(conn->sockfd == socket){
+                LIST_REMOVE(conn, next);
+                delete(conn);
+            }
+        }
+    }else{
+        LIST_FOREACH(dataConn, &dataConnList, next){
+            if(dataConn->sockfd == socket){
+                LIST_REMOVE(dataConn, next);
+                delete(dataConn);
+            }
+        }
+    }
+    close(socket);
+}
+
+ssize_t recvAll(int sockIdx, char* buf, ssize_t totalBytes){
+    ssize_t bytesRead = 0;
+    bytesRead = recv(sockIdx, buf, totalBytes, 0);
+    if(bytesRead == 0) return -1;
+    while(bytesRead != totalBytes){
+        bytesRead+= recv(sockIdx, buf+bytesRead, totalBytes-bytesRead,0);
+    }
+    return bytesRead;
+}
+ssize_t sendAll(int sockIdx, char* buf, ssize_t totalBytes){
+    ssize_t bytesRead = 0;
+    bytesRead = send(sockIdx, buf, totalBytes, 0);
+    if(bytesRead == -1) return -1;
+    while(bytesRead != totalBytes){
+        bytesRead += send(sockIdx, buf+bytesRead, totalBytes-bytesRead, 0);
+    }
+    return bytesRead;
+}
+
+//build the headers should be three: control header, router header, data header
+char* buildRouterH(uint16_t routerPort, uint32_t routerIp, uint16_t rC){
+    char* rUpdateHeader = new char [ROUTINGUPDATEHEADERSIZE];
+    struct RoutingUpdateH routingUpdateH;
+    routingUpdateH.routerCount = htons(rC);
+    routingUpdateH.routerIp = htonl(routerIp);
+    routingUpdateH.routerPort = htons(routerPort);
+    memcpy(rUpdateHeader, &routingUpdateH, ROUTINGUPDATEHEADERSIZE);
+    return rUpdateHeader;
+}
+char* buildDataH(uint8_t tId, uint8_t ttl, uint16_t seqNum, bool lastChunk, uint32_t destIp){
+    char* rUpdateH = new char[DATAPACKETHEADERSIZE];
+    struct DataPacketH dataHeader;
+    dataHeader.destIp = destIp;
+    dataHeader.ttl = ttl;
+    dataHeader.transferId = tId;
+    dataHeader.seqNum = seqNum;
+    if(lastChunk){
+        dataHeader.isLast = htons(0x8000);
+    }else{
+        dataHeader.isLast = htons(0);
+    }
+    memcpy(rUpdateH, &dataHeader, DATAPACKETHEADERSIZE);
+    return rUpdateH;
+}
+char* buildCtrlResponseH(int socket, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen) {
+    struct sockaddr_in sockaddr;
+    socklen_t size = sizeof(struct sockaddr_in);
+    char* buffer = new char[sizeof(char)*CTRLRESPHSIZE];
+    struct CtrlMsgRespH* header = (struct CtrlMsgRespH*) buffer;
+    getpeername(socket, (struct sockaddr*)&sockaddr, &size);
+    memcpy(&(header->ctrlIpAddress), &(sockaddr.sin_addr), sizeof(struct in_addr));
+    header->controlCode = ctrlCode;
+    header->respCode = respCode;
+    header->payloadLen = payLen;
+    return buffer;
+}
+
+void authorCmd(int sockIdx){
+    uint16_t  payLen, respLen;
+    char* ctrlRespH, *ctrlRespPay, *ctrlResp;
+    payLen = sizeof(AUTHORCMD)-1;//remove the null char
+    ctrlRespPay = new char [payLen];
+    memcpy(ctrlRespPay, AUTHORCMD, payLen);
+    ctrlRespH = buildCtrlResponseH(sockIdx, 0,0,payLen);
+    respLen = CTRLRESPHSIZE+payLen;
+    ctrlResp = new char [respLen];
+    memcpy(ctrlResp, ctrlRespH, CTRLRESPHSIZE);
+    memcpy(ctrlResp+CTRLRESPHSIZE, ctrlRespPay, payLen);
+    sendAll(sockIdx, ctrlResp, respLen);
+    delete[](ctrlResp);
+    delete[](ctrlRespPay);
+    delete[](ctrlRespH);
+}
+void takeDown(int socket){
+    char* header = buildCtrlResponseH(socket, 4,0,0);
+    sendAll(socket, header, 8);
+    free(header);
+    exit(EXIT_SUCCESS);
+}
+
+void outError(std::string message){
+    perror(message.c_str());
+    exit(EXIT_FAILURE);
+}
+
 
 
 
