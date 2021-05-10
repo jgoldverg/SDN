@@ -26,7 +26,6 @@
 #define OFFSETSIXTEEN 16
 #define OFFSETEIGHTEEN 18
 
-char* buildCtrlResponseH(int sockIdx, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen);
 
 struct __attribute__((packed)) CtrlMsgH {
 	uint32_t destIpAddress;
