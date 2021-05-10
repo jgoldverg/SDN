@@ -125,9 +125,9 @@ void handleFileDescriptors(){
                     FD_CLR(i, &headList);
                 }
             }else if(isDataFd(ctrlSock)){
-                if(!handleDataPacketData(i)){
-                    FD_CLR(i, &headList);
-                }
+//                if(!handleDataPacketData(i)){
+//                    FD_CLR(i, &headList);
+//                }
             }
         }
     }
@@ -135,14 +135,14 @@ void handleFileDescriptors(){
 bool handleControlData(int socket){
     auto controlHeader = new char [sizeof(char)*CTRLHEADERSIZE];
     memset(controlHeader, 0, CTRLHEADERSIZE);
-    if(recvAll(socket, controlHeader, CTRLHEADERSIZE) < 0){
+    if(recvAll(socket, controlHeader, CTRLHEADERSIZE) <0){
         removeConn(socket, false);
         delete[](controlHeader);
         return false;
     }
     struct CtrlMsgH* ctrlMsg = (struct CtrlMsgH*) controlHeader;
-    auto cc = ctrlMsg->controlCode;
-    auto payLen = ntohs(ctrlMsg->payloadLen);
+    uint8_t cc = ctrlMsg->controlCode;
+    uint16_t payLen = ntohs(ctrlMsg->payloadLen);
     char* payload;
     delete[](controlHeader);
     if(payLen != 0){
@@ -170,7 +170,7 @@ bool handleControlData(int socket){
         takeDown(socket);
     }else if(cc == 5){
         //send file response
-        startFileResponse(payload, socket, payLen);
+//        startFileResponse(payload, socket, payLen);
     }
     if(payLen != 0) delete[](ctrlMsg);
     return true;
@@ -206,12 +206,13 @@ void initRouter(char* payLoad){
 }
 void initResponse(char* payload, int socket){
     initRouter(payload);
-    auto respH = buildCtrlResponseH(socket, 1,0,0);
+    char* respH = buildCtrlResponseH(socket, 1,0,0);
     sendAll(socket, respH, CTRLRESPHSIZE);
     free(respH);
-    routerSock = buildRouterSock();
-    FD_SET(routerSock, &headList);
-    if(routerSock > TOPFD){
+    int rs = buildRouterSock();
+    FD_SET(rs, &headList);
+    routerSock = rs;
+    if(rs > TOPFD){
         TOPFD = routerSock;
     }
     dataSock = buildDataSock();
@@ -223,9 +224,7 @@ void updateResponse(char* payload, int socket){
     uint16_t routerId, cost;
     routerId = (uint8_t) (payload[0] << 8 | payload[1]);
     cost = (uint8_t)(payload[2] << 8 | payload[3]);
-//    memcpy(&routerId, &payload[0], sizeof(uint16_t));//not sure if this works
-//    memcpy(&cost, &payload[2], sizeof(uint16_t));//not sure if this works
-    auto respH = buildCtrlResponseH(socket, 3,0,0);
+    char* respH = buildCtrlResponseH(socket, 3,0,0);
     for(int i = 0; i < routerCount; i++){
         if(routerIds[i] == routerId){
             costs[i] = cost;
@@ -241,7 +240,7 @@ void updateResponse(char* payload, int socket){
 }
 void routeTableResponse(int socket){
     uint16_t payLen=routerCount*8;
-    auto respRH = buildCtrlResponseH(socket, 2,0,payLen);
+    char* respRH = buildCtrlResponseH(socket, 2,0,payLen);
     uint16_t fullLength = payLen + 8;
     auto respR = new char [fullLength];
     memcpy(respR, 0, sizeof(fullLength));
@@ -267,20 +266,17 @@ void zeroOutVectors(){
         adjacentNodes[i] = INT8_MIN;
     }
 }
-void startFileResponse(char* payload, int socket, uint16_t payloadSize){
-
-}
-bool handleDataPacketData(int socket){
-    return false;
-}
-
 void recvRouterUpdate(int sock){
     auto totalLength = 8 + (12*routerCount);
     auto routerMessage = new char [totalLength];
     struct sockaddr routerInfo;
     socklen_t routerInfoLen = sizeof(routerInfo);
     memset(&routerInfo, 0, routerInfoLen);
-    recvfrom(sock, routerMessage, totalLength, 0, &routerInfo, &routerInfoLen);
+    size_t bytesRecv = recvfrom(sock, routerMessage, totalLength, 0, &routerInfo, &routerInfoLen);
+    if(bytesRecv <= 0){
+        std::string error = "error reading in bytes from scoket";
+        outError(error);
+    }
     auto fieldCount = (uint8_t)routerMessage[0] << 8 | (uint8_t)routerMessage[1];
     auto rPort = (uint8_t)routerMessage[2] << 8 | (uint8_t)routerMessage[3];
     auto offset = 18;
@@ -344,17 +340,24 @@ int buildCtrlSock(){
         std::string e = "issue creating the socket";
         outError(e);
     }
-    int num = 1;
+    int num[] = {1};
     if(setsockopt(so, SOL_SOCKET,SO_REUSEADDR, &num, sizeof(int))<0){
         std::string e ="error making control socket reuseable";
         outError(e);
     }
     struct sockaddr_in sockAddr;
+    memset(&sockAddr, 0, sizeof(sockAddr));
     sockAddr.sin_family = AF_INET;
     sockAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     sockAddr.sin_port = htons(ctrlPort);
-    bind(so, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
-    listen(so, 5);
+    if(bind(so, (struct sockaddr*)&sockAddr, sizeof(sockAddr))<0){
+        std::string e = "error binding to control sock";
+        outError(e);
+    }
+    if(listen(so, 5) < 0){
+        std::string e = "error listening to control sock";
+        outError(e);
+    }
     LIST_INIT(&ctrlConnList);
     return so;
 }
@@ -385,7 +388,7 @@ int buildDataSock(){
     memset(&info, 0, sizeof(info));
     info.sin_addr.s_addr = htonl(INADDR_ANY);
     info.sin_port = htons(dataPorts[currentRouter]);
-    bind(dataSock, (struct sockaddr*)&info, sizeof(socklen_t));
+    auto res = bind(dataSock, (struct sockaddr*)&info, sizeof(socklen_t));
     listen(dataSock, 5);
     LIST_INIT(&dataConnList);
     return dataSock;
@@ -510,14 +513,11 @@ char* buildCtrlResponseH(int socket, uint8_t ctrlCode, uint8_t respCode, uint16_
 }
 
 void authorCmd(int sockIdx){
-    uint16_t  payLen, respLen;
-    char* ctrlRespH, *ctrlRespPay, *ctrlResp;
-    payLen = sizeof(AUTHORCMD)-1;//remove the null char
-    ctrlRespPay = new char [payLen];
+    uint16_t payLen=sizeof(AUTHORCMD)-1, respLen=CTRLRESPHSIZE+payLen;
+    char* ctrlRespH = buildCtrlResponseH(sockIdx, 0,0,payLen);
+    char* ctrlRespPay = new char [payLen];
     memcpy(ctrlRespPay, AUTHORCMD, payLen);
-    ctrlRespH = buildCtrlResponseH(sockIdx, 0,0,payLen);
-    respLen = CTRLRESPHSIZE+payLen;
-    ctrlResp = new char [respLen];
+    char* ctrlResp = new char [respLen];
     memcpy(ctrlResp, ctrlRespH, CTRLRESPHSIZE);
     memcpy(ctrlResp+CTRLRESPHSIZE, ctrlRespPay, payLen);
     sendAll(sockIdx, ctrlResp, respLen);

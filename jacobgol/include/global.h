@@ -36,7 +36,7 @@ int addConn(int socket, bool ctrlOrData);//add to LinkedList
 void removeConn(int socket, bool ctrlOrData);//remove from LinkedList
 
 bool handleControlData(int socket);
-bool handleDataPacketData(int socket);
+//bool handleDataPacketData(int socket);
 
 char* buildRouterH(uint16_t routerPort, uint32_t routerIp, uint16_t rC);
 char* buildCtrlResponseH(int sockIdx, uint8_t ctrlCode, uint8_t respCode, uint16_t payLen);
