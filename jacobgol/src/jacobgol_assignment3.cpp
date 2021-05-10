@@ -334,7 +334,8 @@ int buildCtrlSock(){
         std::string e = "issue creating the socket";
         outError(e);
     }
-    if(setsockopt(so, SOL_SOCKET,SO_REUSEADDR, (int[]){1}, sizeof(int))<0){
+    int num = 1;
+    if(setsockopt(so, SOL_SOCKET,SO_REUSEADDR, &num, sizeof(int))<0){
         std::string e ="error making control socket reuseable";
         outError(e);
     }
