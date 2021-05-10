@@ -82,7 +82,7 @@ void mainMethod(){
     std::cout << "entered the mainMethod()" << std::endl;
     while (true){
         viewList = headList;
-        auto selectRepeat = select(TOPFD+1, &viewList, NULL, NULL, &timeVal);
+        auto selectRepeat = select(TOPFD+1, &viewList, 0, 0, &timeVal);
         if(selectRepeat == 0){
             timeVal.tv_sec = TIMEOUTVAL;
             timeVal.tv_usec=0;
@@ -124,7 +124,7 @@ void handleFileDescriptors(){
 bool handleControlData(int socket){
     auto controlHeader = new char [sizeof(char)*CTRLHEADERSIZE];
     memset(controlHeader, 0, CTRLHEADERSIZE);
-    if(recvAll(socket, controlHeader, CTRLHEADERSIZE) <0){
+    if(recvAll(socket, controlHeader, CTRLHEADERSIZE) < 0){
         removeConn(socket, false);
         delete[](controlHeader);
         return false;
@@ -378,6 +378,10 @@ int buildDataSock(){
     info.sin_addr.s_addr = htonl(INADDR_ANY);
     info.sin_port = htons(dataPorts[currentRouter]);
     auto res = bind(dataSock, (struct sockaddr*)&info, sizeof(socklen_t));
+    if(res < 0){
+        std::string e = "there was an error with set bind in data sock";
+        outError(e);
+    }
     listen(dataSock, 5);
     LIST_INIT(&dataConnList);
     return dataSock;
